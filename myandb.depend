@@ -1,0 +1,17 @@
+# depslib dependency file v1.0
+1392778493 source:d:\work\cproject\myandb\src\osscocket.cpp
+	"OSScocket.h"
+
+1392778493 d:\work\cproject\myandb\src\include\osscocket.h
+
+1392779759 source:d:\work\cproject\myandb\src\os\ossocket.cpp
+	"../include/OSSocket.h"
+
+1392778413 d:\work\cproject\myandb\src\include\ossocket.h
+
+1392779814 source:d:\work\cproject\myandb\src\pmdmain.cpp
+	<iostream>
+
+1392780031 source:d:\work\cproject\myandb\src\pmd\pmdmain.cpp
+	<iostream>
+
