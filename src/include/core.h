@@ -54,6 +54,10 @@
 #include <vector>
 #include <iostream>
 
+#include <boost/thread.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/bind.hpp>
+
 #define OSS_MAX_PATHSIZE  PATH_MAX
 #if defined _WINDOWS
 #define OSS_FILE_SEP_STR  "\\"
