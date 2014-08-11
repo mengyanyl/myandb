@@ -30,8 +30,6 @@ int main()
 {
     Logger::getLogger().init("log_test.log", Logger::LOG_DEBUG_LEVEL, true);
     vector<TestFun*> vec;
-    std::string sname("threadpool");
-    ThreadPool tp(sname, 4);
 
     for (int i=0; i<10; i++)
     {
@@ -40,9 +38,9 @@ int main()
     }
 
     for(vector<TestFun*>::iterator iter=vec.begin(); iter!=vec.end(); ++iter)
-        tp.start(*iter, "");
+        ThreadPool::getThreadPool().start(*iter, "");
 
-    tp.stopAll();
+    ThreadPool::getThreadPool().stopAll();
 
     for (vector<TestFun*>::iterator iter = vec.begin(); iter!=vec.end(); ++iter)
         delete *iter;

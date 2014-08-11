@@ -39,12 +39,10 @@ public:
     typedef vector<PooledThread*> ThreadVector;
     ThreadPool(string name,
                int minCapacity = 2,
-                       int maxCapacity = 10,
+                       int maxCapacity = 100,
                        int idleTime = 60
                );
     virtual ~ThreadPool(){};
-
-    PooledThread* getThread();
 
     void addCapacity(int n);
 
@@ -58,13 +56,17 @@ public:
 
     void joinAll();
 
-    void start(Runnable* target, string name);
+    void start(Runnable* target);
 
     void stopAll();
+
+    static ThreadPool& getThreadPool();
 
 protected:
 private:
     PooledThread* createThread();
+    PooledThread* getThread();
+
     void housekeep();
 
     string _name;

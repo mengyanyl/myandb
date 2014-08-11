@@ -185,11 +185,6 @@ ThreadPool::ThreadPool(string name,
 void ThreadPool::addCapacity(int n)
 {
     boost::mutex::scoped_lock(_mutex);
-    if (_maxCapacity + n > _maxCapacity)
-    {
-        Logger::getLogger().error("copacity is larger than maxCapacity");
-        return;
-    }
     _maxCapacity += n;
     housekeep();
 }
@@ -317,7 +312,7 @@ void ThreadPool::joinAll()
     this->housekeep();
 }
 
-void ThreadPool::start(Runnable* target, string name)
+void ThreadPool::start(Runnable* target)
 {
     _queue.put(target);
 }
@@ -339,4 +334,35 @@ void ThreadPool::stopAll()
         delete *it;
     }
     _threads.clear();
+}
+
+class ThreadPoolSingleton
+{
+public:
+    ThreadPoolSingleton():_pool(NULL){};
+
+    ~ThreadPoolSingleton()
+    {
+        delete _pool;
+    }
+
+    ThreadPool& getInstance()
+    {
+        boost::mutex::scoped_lock lock(_mutex);
+        if (!_pool)
+        {
+            _pool = new ThreadPool("ThreadPool");
+        }
+        return *_pool;
+    }
+private:
+    ThreadPool *_pool;
+    boost::mutex _mutex;
+};
+
+static ThreadPoolSingleton threadPoolSingleton;
+
+ThreadPool& ThreadPool::getThreadPool()
+{
+    return threadPoolSingleton.getInstance();
 }
