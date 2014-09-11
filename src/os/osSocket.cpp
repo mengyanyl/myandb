@@ -252,6 +252,8 @@ int osSocket::recv(char *pMsg, int len, int timeout, int flags)
         else if ( rc == 0)
         {
             Logger::getLogger().error("peer unexcepted shutdown");
+            this->close();
+            break;
         }
         else
         {
@@ -265,6 +267,10 @@ int osSocket::recv(char *pMsg, int len, int timeout, int flags)
             {
                 retries++;
                 continue;
+            }
+            else
+            {
+                break;
             }
             Logger::getLogger().error("failed to recv, errorCode=%d", rc);
         }

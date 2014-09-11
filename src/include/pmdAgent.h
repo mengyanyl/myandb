@@ -20,14 +20,20 @@
 #include "core.h"
 #include "msg.h"
 #include "osSocket.h"
+#include "runnable.h"
 
-class pmdAgent
+using namespace myan::utils;
+
+class pmdAgent : public Runnable
 {
 private:
     osSocket _socket;
+
     int recvHeader(osSocket &sock, MsgHeader &msgHeader);
     int sendHeader(osSocket &sock, int seq, int len , int opCode);
     int recvBodyAndSend(osSocket &sock, MsgHeader &header);
+
+    void release(){ delete this; }
 
     inline void pmdSend(char *buffer, int len)
     {
@@ -50,7 +56,15 @@ private:
     }
 
 public:
-    int pmdAgentEntryPoint ( SOCKET &clientSocket ) ;
+    pmdAgent(SOCKET *pSocket);
+    ~pmdAgent();
+
+    inline void setClientSocket(SOCKET *pSocket)
+    {
+        this->_socket.setSocket(pSocket);
+    }
+
+    void run();
 };
 
 

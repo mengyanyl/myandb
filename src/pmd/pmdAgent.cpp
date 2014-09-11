@@ -16,11 +16,20 @@
 
 #include "pmdAgent.h"
 #include "logger.h"
-#include <string>
 #include <bson/src/util/json.h>
 
 using namespace bson;
 using namespace myan::utils;
+
+pmdAgent::pmdAgent(SOCKET *pSocket)
+{
+    this->_socket.setSocket(pSocket);
+}
+
+pmdAgent::~pmdAgent()
+{
+    this->_socket.close();
+}
 
 int pmdAgent::recvHeader(osSocket &sock, MsgHeader &header)
 {
@@ -142,10 +151,8 @@ int pmdAgent::recvBodyAndSend(osSocket &sock, MsgHeader &header)
     free(pResultBuffer);
 }
 
-
-int pmdAgent::pmdAgentEntryPoint ( SOCKET &clientSocket )
+void pmdAgent::run()
 {
-    _socket.setSocket(&clientSocket);
     _socket.disableNagle();
     char peerAddress[128];
     _socket.getPeerAddress(peerAddress, sizeof(peerAddress));
@@ -162,6 +169,4 @@ int pmdAgent::pmdAgentEntryPoint ( SOCKET &clientSocket )
             recvBodyAndSend(_socket, header);
         }
     }
-
-    return EDB_OK;
 }

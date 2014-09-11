@@ -39,6 +39,7 @@ Logger::Logger():_showConsole(false), _haveConsole(false),_isStoped(false),_logL
 
 Logger::~Logger()
 {
+    this->release();
     std::cout << "delete logger thread" << std::endl;
 }
 
@@ -335,7 +336,8 @@ int Logger::warn(char *fmt, ...)
 void Logger::release()
 {
     _isStoped=true;
-    _cond.wait(_fastMutex);
+    boost::mutex::scoped_lock lock(_fastMutex);
+    _cond.wait(lock);
 }
 
 void Logger::setLevel(int logLevel)
