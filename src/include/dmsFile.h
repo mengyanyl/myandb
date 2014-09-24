@@ -19,9 +19,8 @@
 
 #include "core.h"
 #include "osMmapFile.h"
-
-
-typedef unsigned int PAGEID;
+#include "dmsRecordID.h"
+#include "bson.h"
 
 //4M for one page
 #define DMS_PAGESIZE 4194304
@@ -81,6 +80,7 @@ struct dmsPageHeader
 
 #define DMS_FILE_SEGMENT_SIZE   134217728
 #define DMS_FILE_HEADER_SIZE    65536
+#define DMS_EXTEND_SIZE         DMS_FILE_HEADER_SIZE
 #define DMS_PAGES_PER_SEGMENT   (DMS_FILE_SEGMENT_SIZE/DMS_PAGESIZE)
 #define DMS_MAX_SEGMENTS        (DMS_MAX_PAGES/DMS_PAGES_PER_SEGMENT)
 
@@ -93,6 +93,7 @@ private:
     std::vector<char *>         _body;
     std::multimap<unsigned int , PAGEID>    _freeSpaceMap;
     boost::mutex                            _mutex;
+    boost::mutex                            _extendMutex;
     char *                      _pFileName;
     //TODO INDEX MANAGEER
     public:
@@ -108,6 +109,7 @@ private:
         int _extnedSegment();
         int _initNew();
         int _extendFile(int size);
+        int _extendSegment();
         int _loadData();
         int _searchSlot(char *page, dmsRecordID &rid, SLOTOFF &slot);
         void _recoverSpace(char *page);
@@ -124,7 +126,11 @@ private:
         }
         int char *pageToOffset(PAGEID pageID)
         {
-
+            if (pageID > getNumPages())
+            {
+                return NULL;
+            }
+            return _body[pageID/DMS_PAGES_PER_SEGMENT] + DMS_PAGESIZE * (pageID % DMS_PAGES_PER_SEGMENT);
         }
         inline bool validSize(size_t size)
         {
