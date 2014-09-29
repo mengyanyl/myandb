@@ -215,11 +215,50 @@ int dmsFile::_searchSlot(char *page, dmsRecordID &rid, SLOTOFF &slotOff)
     return EDB_OK;
 }
 
+int dmsFile::remove(dmsRecordID &rid)
+{
+    SLOTOFF slot = 0;
+    int rc = EDB_OK
+    char *page = NULL;
+    dmsRecord *recordHeader = NULL;
+    dmsPageHeader *pageHeader = NULL;
+
+    boost::scoped_lock lock (this->_mutex);
+
+    page = pageToOffset(rid._pageID);
+    if (!page)
+    {
+        Logger::getLogger().error("[remove] get page is null");
+        return EDB_SYS;
+    }
+    pageHeader = (dmsPageHeader *)page;
+
+    rc = _searchSlot(page, rid, slot);
+    if (rc)
+    {
+        Logger::getLogger().error("[remove] failed to search slot, rc=%d", rc);
+        return rc;
+    }
+    if (slot == DMS_SLOT_EMPTY)
+    {
+        Logger::getLogger().error("[remove] the record is dropped");
+        return EDB_SYS;
+    }
+
+    *((SLOTOFF *)(page + sizeof(dmsPageHeader) + rid._slotID * sizeof(SLOTOFF))) = DMS_SLOT_EMPTY;
+    recordHeader = (dmsRecord *)(page + slot);
+    recordHeader->_flag = DMS_RECORD_FLAG_DROPPED;
+    _updateFreeSpace(pageHeader, recordHeader->_size , rid._pageID);
+}
+
 int dmsFile::insert(BSONObj &record, BSONObj &outRecord, dmsRecordID &rid)
 {
     int rc = EDB_OK;
     int recordSize = 0;
     PAGEID pageID;
+    dmsPageHeader *pageHeader;
+    dmsRecord recordHeader;
+    SLOTOFF offsetTemp = 0;
 
     recordSize = record.objsize();
 
@@ -229,6 +268,7 @@ int dmsFile::insert(BSONObj &record, BSONObj &outRecord, dmsRecordID &rid)
         return EDB_SYS;
     }
 
+retry:
     _mutex.lock();
     pageID = _findPage(recordSize);
     if (pageID == DMS_INVALID_PAGEID)
@@ -246,9 +286,59 @@ int dmsFile::insert(BSONObj &record, BSONObj &outRecord, dmsRecordID &rid)
         }
         else
         {
-
+            //maybe someone is extending sgemenmt, do it again
+            _extendMutex.lock();
         }
+        _extendMutex.unlock();
+        goto retry;
     }
+    page = pageToOffset(pageID);
+    if (!page)
+    {
+        Logger::getLogger().error("failed to find page");
+        return EDB_SYS;
+    }
+    pageHeader = (dmsPageHeader *)page;
+    if (
+        (pageHeader->_freeSpace >
+            (pageHeader->_freeOffset - pageHeader->_slotOffset))
+        &&
+        ((pageHeader->_slotOffset + recordSize + sizeof(dmsRecord) + sizeof(SLOTID)) >
+            pageHeader->_freeOffset)
+        )
+    {
+        _recoverSpace(page);
+    }
+
+    if (
+        (pageHeader->_freeSpace < (recordSize + sizeof(dmsRecord) + sizeof(SLOTID)))
+        ||
+        ((pageHeader->_freeOffset - pageHeader->_slotOffset)
+         <
+         (recordSize + sizeof(dmsRecord) + sizeof(SLOTID)))
+        )
+    {
+        Logger::getLogger().error("page is not enough size");
+        return EDB_SYS;
+    }
+
+    recordHeader->_size = recordSize + sizeof(dmsRecord);
+    recordHeader->_flag = DMS_RECORD_FLAG_NORMAL;
+    offsetTemp = pageHeader->_freeOffset - recordSize - sizeof(dmsRecord);
+    *(SLOTOFF *)(page +sizeof(dmsPageHeader) + pageHeader->_numSlots * sizeof(SLOTOFF)) = offsetTemp;
+    //copy record header
+    memcpy(page + offsetTemp, ( char*)&recordHeader, sizeof(dmsRecord));
+    //copy record body
+    memcpy(page + offsetTemp + sizeof(dmsRecord),
+            record.objdata(), recordSize);
+    outRecord = BSONObj(page + offsetTemp + sizeof(dmsRecord));
+    rid._pageID = pageID;
+    rid._slotID = pageHeader->_numSlots;
+    //change pageheader info
+    pageHeader->_numSlots++;
+    pageHeader->_freeSpace -= recordSize;
+    pageHeader->_slotOffset += sizeof(SLOTID);
+    pageHeader->_freeOffset = offsetTemp;
 }
 
 int dmsFile::_findPage(size_t requireSize)
@@ -315,5 +405,59 @@ int dmsFile::_extendSegment()
     this->_mutex.unlock();
 
     return rc;
+}
+
+int dmsFile::_updateFreeSpace(dmsPageHeader *pageHeader, int changeSize, PAGEID pageID)
+{
+    unsigned int freeSpace = header->_freeSpace ;
+    std::pair<std::multimap<unsigned int, PAGEID>::iterator,
+             std::multimap<unsigned int, PAGEID>::iterator> ret ;
+    ret = _freeSpaceMap.equal_range(freeSpace);
+    for (std::multimap<unsigned int , PAGEID>::iterator it = ret.first; it != ret.second; ++it)
+    {
+        if (it->second == pageID)
+        {
+            _freeSpaceMap.erase(pageID);
+            break;
+        }
+    }
+    freeSpace += changeSize;
+    pageHeader->_freeSpace = freeSpace;
+    //insert new freespace
+    _freeSpaceMap->insert(std::pair<unsigned int , PAGEID>(freeSpace, pageID));
+}
+
+int dmsFile::_recoverSpace(char *page)
+{
+    dmsPageHeader *pageHeader = NULL;
+    SLOTOFF slot = 0;
+    char *pLeft = NULL;
+    char *pRight = NULL;
+    bool isRecoverd = false;
+    dmsRecord *pRecord;
+
+    pageHeader = (dmsPageHeader *)page;
+    pLeft = page + sizeof(dmsPageHeader);
+    pRight = page + DMS_PAGESIZE;
+
+    for (int i=0; i<pageHeader->_numSlots; i++)
+    {
+        slot = *((SLOTOFF *)(pLeft + i * sizeof(SLOTID)));
+        if (slot == DMS_SLOT_EMPTY)
+        {
+            pRecord = (dmsRecord *)(page + slot);
+            pRight -= pRecord->_size;
+            if (isRecoverd)
+            {
+                memmove(pRight, page + slot, pRecord->_size);
+                *((SLOTOFF *)(pLeft + i * sizeof(SLOTID))) = pRight - page;
+            }
+        }
+        else
+        {
+            isRecoverd = true;
+        }
+    }
+    pageHeader->_freeOffset = pRight - page;
 }
 

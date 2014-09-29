@@ -79,4 +79,6 @@ int osMmapFile::map(unsigned long long offset, unsigned int length, void **pAddr
     seg._length = length;
     seg._offset = offset;
     segments.push_back(seg);
+    if ( pAddress )
+      *pAddress = segment ;
 }
