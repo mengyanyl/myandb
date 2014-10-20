@@ -26,6 +26,7 @@
 #define COMMAND_CONNECT      "connect"
 #define COMMAND_TEST         "test"
 #define COMMAND_SNAPSHOT     "snapshot"
+#define COMMAND_DB_SHUTDOWN     "shutdown"
 
 #define RECV_BUF_SIZE     4096
 #define SEND_BUF_SIZE     4096
@@ -81,6 +82,14 @@ class ConnectCommand : public ICommand
 };
 
 class QuitCommand : public ICommand
+{
+   public:
+      int execute(osSocket & sock, std::vector<std::string> & argVec );
+   protected:
+      int handleReply();
+};
+
+class DBShutDownCommand : public ICommand
 {
    public:
       int execute(osSocket & sock, std::vector<std::string> & argVec );

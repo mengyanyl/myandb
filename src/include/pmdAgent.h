@@ -21,6 +21,7 @@
 #include "msg.h"
 #include "osSocket.h"
 #include "runnable.h"
+#include "dmsFile.h"
 
 using namespace myan::utils;
 
@@ -28,6 +29,7 @@ class pmdAgent : public Runnable
 {
 private:
     osSocket _socket;
+    DMSFILE_PTR _dmsFilePtr;
 
     int recvHeader(osSocket &sock, MsgHeader &msgHeader);
     int sendHeader(osSocket &sock, int seq, int len , int opCode);
@@ -56,7 +58,7 @@ private:
     }
 
 public:
-    pmdAgent(SOCKET *pSocket);
+    pmdAgent(SOCKET *pSocket, DMSFILE_PTR &aDmsFilePtr);
     ~pmdAgent();
 
     inline void setClientSocket(SOCKET *pSocket)

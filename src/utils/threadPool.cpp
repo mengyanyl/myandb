@@ -42,15 +42,14 @@ private:
     std::string          _name;
     boost::mutex         _mutex;
     boost::condition_variable_any _condTargetFinished;
-    boost::condition_variable_any _condTargetComplete;
-    boost::condition_variable_any _condStarted;
     BlockingQueue<Runnable *> *_pQueue;
 };
 
 PooledThread::PooledThread(std::string name):
     _idle(true),
     _idleTime(0),
-    _name(name)
+    _name(name),
+    _pTarget(NULL)
 {
     _idleTime = std::time(NULL);
 }
@@ -99,8 +98,8 @@ void PooledThread::run()
 {
     for (;;)
     {
-        Logger::getLogger().debug("%s thread wait to take", _name.c_str());
-        Logger::getLogger().debug("%s thread queue size: %d", _name.c_str(), _pQueue->getQueueSize());
+        //Logger::getLogger().debug("%s thread wait to take", _name.c_str());
+        //Logger::getLogger().debug("%s thread queue size: %d", _name.c_str(), _pQueue->getQueueSize());
         _pQueue->take(_pTarget);
         if ( _pTarget )
         {
@@ -119,6 +118,8 @@ void PooledThread::run()
             _idleTime = time(NULL);
             _idle = true;
             _mutex.unlock();
+
+            delete _pTarget;
         }
         else
         {
@@ -156,7 +157,7 @@ void PooledThread::release()
     boost::mutex::scoped_lock lock(_mutex);
     _idle = true;
     //waiting for 10s, timed out
-    _condTargetFinished.timed_wait(lock, boost::get_system_time() + boost::posix_time::seconds(10));
+    _condTargetFinished.timed_wait(lock, boost::get_system_time() + boost::posix_time::seconds(5));
     Logger::getLogger().debug("%s thread release", _name.c_str());
 }
 
@@ -309,7 +310,6 @@ void ThreadPool::joinAll()
     {
         (*it)->join();
     }
-    this->housekeep();
 }
 
 void ThreadPool::start(Runnable* target)

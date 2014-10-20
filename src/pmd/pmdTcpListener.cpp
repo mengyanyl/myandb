@@ -20,9 +20,17 @@
 
 pmdTcpListener::pmdTcpListener()
 {
-    _svrsock.setAddress("127.0.0.1", 9999);
+    _svrsock.setAddress("192.168.1.99", 9999);
     _svrsock.initSocket();
     _svrsock.bind_listen();
+}
+
+pmdTcpListener::pmdTcpListener(DMSFILE_PTR aDmsFilePtr)
+{
+    _svrsock.setAddress("192.168.1.99", 9999);
+    _svrsock.initSocket();
+    _svrsock.bind_listen();
+    this->_dmsFilePtr = aDmsFilePtr;
 }
 
 pmdTcpListener::~pmdTcpListener()
@@ -43,8 +51,9 @@ void pmdTcpListener::run()
             re = EDB_OK ;
             continue ;
         }
+        Logger::getLogger().debug("pagent=%d", &clientSock);
 
-        Runnable *pagent = new pmdAgent(&clientSock);
+        Runnable *pagent = new pmdAgent(&clientSock, this->_dmsFilePtr);
         ThreadPool::getThreadPool().start(pagent);
     }
 }

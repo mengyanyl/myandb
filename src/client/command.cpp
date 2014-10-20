@@ -29,6 +29,7 @@ COMMAND_ADD(COMMAND_QUERY,QueryCommand)
 COMMAND_ADD(COMMAND_DELETE,DeleteCommand)
 COMMAND_ADD(COMMAND_QUIT, QuitCommand)
 COMMAND_ADD(COMMAND_HELP, HelpCommand)
+COMMAND_ADD(COMMAND_DB_SHUTDOWN, DBShutDownCommand)
 COMMAND_END
 
 extern int gQuit;
@@ -238,6 +239,26 @@ int QuitCommand::execute( osSocket & sock, std::vector<std::string> & argVec )
         return getError(EDB_SOCK_NOT_CONNECT);
     }
     ret = sendOrder( sock, OP_DISCONNECT, 0 );
+    sock.close();
+    ret = handleReply();
+    return ret;
+}
+
+/******************************DBShutDownCommand**********************************************/
+int DBShutDownCommand::handleReply()
+{
+    int ret = EDB_OK;
+    return ret;
+}
+
+int DBShutDownCommand::execute( osSocket & sock, std::vector<std::string> & argVec )
+{
+    int ret = EDB_OK;
+    if( !sock.isConnected() )
+    {
+        return getError(EDB_SOCK_NOT_CONNECT);
+    }
+    ret = sendOrder( sock, OP_DB_SHUTDOWN, 0 );
     sock.close();
     ret = handleReply();
     return ret;

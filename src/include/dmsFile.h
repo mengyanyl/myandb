@@ -99,6 +99,10 @@ private:
     public:
         dmsFile();
         virtual ~dmsFile();
+        dmsFile& operator=(const dmsFile& df)
+        {
+            return *this;
+        }
         int initialize(const char *pFileName);
         int insert(bson::BSONObj &record, bson::BSONObj &ourtRecord,
                    dmsRecordID &rid);
@@ -124,7 +128,7 @@ private:
         {
             return getNumSegments() * DMS_PAGES_PER_SEGMENT;
         }
-        int char *pageToOffset(PAGEID pageID)
+        inline char *pageToOffset(PAGEID pageID)
         {
             if (pageID > getNumPages())
             {
@@ -137,5 +141,7 @@ private:
 
         }
 };
+
+typedef dmsFile* DMSFILE_PTR;
 
 #endif // DMSFILE_H

@@ -27,6 +27,7 @@
 #define OP_DISCONNECT              6
 #define OP_CONNECT                 7
 #define OP_SNAPSHOT                8
+#define OP_DB_SHUTDOWN             9
 
 #define RETURN_CODE_STATE_OK       1
 

@@ -17,7 +17,7 @@
 #ifndef OSPRIMITIVEFILEOP_HPP__
 #define OSPRIMITIVEFILEOP_HPP__
 
-#include "core.hpp"
+#include "core.h"
 
 #ifdef _WINDOWS
 

@@ -39,7 +39,7 @@ public:
     typedef vector<PooledThread*> ThreadVector;
     ThreadPool(string name,
                int minCapacity = 2,
-                       int maxCapacity = 100,
+                       int maxCapacity = 50,
                        int idleTime = 60
                );
     virtual ~ThreadPool(){};

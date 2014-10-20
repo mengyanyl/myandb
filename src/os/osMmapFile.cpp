@@ -17,11 +17,13 @@
 #include "osMmapFile.h"
 #include "logger.h"
 
+using namespace myan::utils;
+
 int osMmapFile::open(const char *pFileName, unsigned int options)
 {
     _mutex.lock();
 
-    int rc = _fileOp->Open(pFileName);
+    int rc = _fileOp.Open(pFileName);
     if (rc==EDB_OK)
         _opened = true;
     else
@@ -34,12 +36,25 @@ int osMmapFile::open(const char *pFileName, unsigned int options)
 
 int osMmapFile::close()
 {
-    _fileOp->close();
+    boost::mutex::scoped_lock lock(_mutex);
+    for (vector<osMmapSegment>::iterator iter=_segments.begin(); iter!=_segments.end(); ++iter)
+    {
+        osMmapSegment seg = *iter;
+        munmap((void*)seg._ptr, seg._length);
+    }
+    _segments.clear();
+
+    if (_opened)
+    {
+        _fileOp.Close();
+        _opened = false;
+    }
+    return EDB_OK;
 }
 
 int osMmapFile::map(unsigned long long offset, unsigned int length, void **pAddress)
 {
-    boost::mutex::scope_lock(_mutex);
+    boost::mutex::scoped_lock(_mutex);
     int rc = EDB_OK;
     osMmapSegment seg (0,0,0);
     unsigned long long fileSize = 0;
@@ -57,8 +72,7 @@ int osMmapFile::map(unsigned long long offset, unsigned int length, void **pAddr
 
     if (offset + length > fileSize)
     {
-
-        Logger::getLogger.error("offset if greater than file size");
+        Logger::getLogger().error("offset if greater than file size");
         return EDB_INVALIDARG;
     }
 
@@ -66,11 +80,11 @@ int osMmapFile::map(unsigned long long offset, unsigned int length, void **pAddr
                     MAP_SHARED, _fileOp.getHandle(), offset);
     if (MAP_FAILED == segment)
     {
-        Logger::getLogger.error("failed to map offset %ld length %d, error no = %d"
+        Logger::getLogger().error("failed to map offset %ld length %d, error no = %d"
                                 , offset, length, errno);
         if (ENOMEM == errno)
             rc = EDB_OOM;
-        else if (EACCES = errno)
+        else if (EACCES == errno)
             rc = EDB_PERM;
         else
             rc = EDB_SYS;
@@ -78,7 +92,9 @@ int osMmapFile::map(unsigned long long offset, unsigned int length, void **pAddr
     seg._ptr = segment;
     seg._length = length;
     seg._offset = offset;
-    segments.push_back(seg);
+    _segments.push_back(seg);
     if ( pAddress )
       *pAddress = segment ;
+
+    return rc;
 }

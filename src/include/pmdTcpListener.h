@@ -20,6 +20,7 @@
 #include "core.h"
 #include "runnable.h"
 #include "osSocket.h"
+#include "dmsFile.h"
 
 using namespace myan::utils;
 
@@ -27,11 +28,13 @@ class pmdTcpListener : public Runnable
 {
     public:
         pmdTcpListener();
+        pmdTcpListener(DMSFILE_PTR aDmsFilePtr);
         ~pmdTcpListener();
         void run();
     protected:
     private:
         osSocket _svrsock;
+        DMSFILE_PTR _dmsFilePtr;
 };
 
 #endif // PMDTCPLISTENER_H

@@ -17,18 +17,21 @@
 #include "pmdAgent.h"
 #include "logger.h"
 #include <bson/src/util/json.h>
+#include "threadPool.h"
 
 using namespace bson;
 using namespace myan::utils;
 
-pmdAgent::pmdAgent(SOCKET *pSocket)
+pmdAgent::pmdAgent(SOCKET *pSocket, DMSFILE_PTR &aDmsFilePtr)
 {
+    this->_dmsFilePtr = aDmsFilePtr;
     this->_socket.setSocket(pSocket);
 }
 
 pmdAgent::~pmdAgent()
 {
-    this->_socket.close();
+    if (_socket.isConnected())
+        this->_socket.close();
 }
 
 int pmdAgent::recvHeader(osSocket &sock, MsgHeader &header)
@@ -76,6 +79,12 @@ int pmdAgent::recvBodyAndSend(osSocket &sock, MsgHeader &header)
         Logger::getLogger().debug("[client-->server disconnect] disconnect");
         return EDB_OK;
     }
+    else if (header.opCode == OP_DB_SHUTDOWN)
+    {
+        sock.close();
+        ThreadPool::getThreadPool().stopAll();
+        return EDB_OK;
+    }
     else if (header.opCode == OP_INSERT)
     {
         try
@@ -92,13 +101,30 @@ int pmdAgent::recvBodyAndSend(osSocket &sock, MsgHeader &header)
                Logger::getLogger().error("First element in inserted record is not id" ) ;
                probe = 25 ;
                rc = EDB_NO_ID ;
-               goto done;
+               return rc;
             }
 
             Logger::getLogger().debug("[client-->server insert] num: %d, data: %s",
                                       ntohl(*((int*)pBuffer)),
                                       insertor.toString().c_str());
-            //TODO insert record
+            //insert record
+            BSONObj outerobj;
+            dmsRecordID rid;
+            rc = _dmsFilePtr->insert(insertor, outerobj, rid);
+            if (rc)
+            {
+                Logger::getLogger().debug("insert record error");
+                return rc;
+            }
+            else
+                Logger::getLogger().debug("insert ok , outer obj: %s", outerobj.toString().c_str());
+
+            //send reply
+            BSONObj retobj = bson::fromjson("{msg:'insert ok'}");
+            int replyBodyLen = sizeof(int) * 2 + retobj.objsize();
+            sendHeader(_socket, header.sequence, replyBodyLen, OP_REPLY);
+            msgBuildReply(&pResultBuffer, rc, retobj);
+            pmdSend(pResultBuffer, replyBodyLen);
          }
          catch ( std::exception &e )
          {
@@ -106,15 +132,9 @@ int pmdAgent::recvBodyAndSend(osSocket &sock, MsgHeader &header)
                      e.what() ) ;
             probe = 30 ;
             rc = EDB_INVALIDARG ;
-            goto done;
+            return rc;
          }
-    done:
-        //send reply
-        BSONObj retobj = bson::fromjson("{msg:'insert ok'}");
-        int replyBodyLen = sizeof(int) * 2 + retobj.objsize();
-        sendHeader(_socket, header.sequence, replyBodyLen, OP_REPLY);
-        msgBuildReply(&pResultBuffer, rc, retobj);
-        pmdSend(pResultBuffer, replyBodyLen);
+
     }
     else if (header.opCode == OP_QUERY)
     {

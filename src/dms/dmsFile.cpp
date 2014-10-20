@@ -16,22 +16,26 @@
 
 #include "dmsFile.h"
 #include "logger.h"
+#include "osPrimitiveFileOp.h"
 
 using namespace bson;
+using namespace myan::utils;
 
-dmsFile::dmsFile()
+dmsFile::dmsFile():_header(NULL), _pFileName(NULL)
 {
     //ctor
 }
 
 dmsFile::~dmsFile()
 {
-    //dtor
+    if (_pFileName)
+        free(_pFileName);
+    close();
 }
 
-dmsFile::initialize(char *pFileName)
+int dmsFile::initialize(const char *pFileName)
 {
-    unsigned int offset = 0;
+    offsetType offset = 0;
     int rc = EDB_OK;
     this->_pFileName = strdup(pFileName);
     if (!_pFileName)
@@ -47,23 +51,25 @@ dmsFile::initialize(char *pFileName)
                                   _pFileName, rc);
         return rc;
     }
+
+getfilesize:
     rc = _fileOp.getSize(&offset);
 
     //it's new file
     if (!offset)
     {
         _initNew();
+        goto getfilesize;
     }
-    else
-    {
-        _loadData();
-    }
+    _loadData();
+
+    return rc;
 }
 
 int dmsFile::_initNew()
 {
     int rc = EDB_OK;
-    rc = _extendFile(DMS_FILE_SEGMENT_SIZE);
+    rc = _extendFile(DMS_FILE_HEADER_SIZE);
     if (rc!=EDB_OK)
     {
         Logger::getLogger().error("failed to extend file, rc=%d", rc);
@@ -94,8 +100,10 @@ int dmsFile::_extendFile(int size)
     {
         _fileOp.seekToEnd();
         rc  = _fileOp.Write(temp, DMS_EXTEND_SIZE);
-        Logger::getLogger().error("failed to write to file, rc=%d", rc);
+        if (rc)
+            Logger::getLogger().error("failed to write to file, rc=%d", rc);
     }
+    return rc;
 }
 
 int dmsFile::_loadData()
@@ -107,13 +115,14 @@ int dmsFile::_loadData()
     dmsPageHeader *pageHeader = NULL;
     unsigned int slotOffset = 0;
     BSONObj bson;
+    SLOTID slotID = 0;
 
     if (!_header)
     {
         rc = map(0, DMS_FILE_HEADER_SIZE, (void**)&_header);
     }
-    numPage = _header->_size;
-    if (numPage % DMS_PAGES_PER_SEGMENT)
+    numPages = _header->_size;
+    if (numPages % DMS_PAGES_PER_SEGMENT)
     {
         rc = EDB_SYS;
         Logger::getLogger().error("failed to load data, header->size error");
@@ -121,12 +130,12 @@ int dmsFile::_loadData()
     }
 
     numSegments = numPages / DMS_PAGES_PER_SEGMENT;
-    if (numSegments < 1)
-    {
-        rc = EDB_SYS;
-        Logger::getLogger().error("failed to load data, num of segments is error");
-        return rc;
-    }
+//    if (numSegments < 1)
+//    {
+//        rc = EDB_SYS;
+//        Logger::getLogger().error("failed to load data, num of segments is error, numSegments=%d", numSegments);
+//        return rc;
+//    }
 
     for (int i=0; i<numSegments; ++i)
     {
@@ -140,20 +149,22 @@ int dmsFile::_loadData()
         _body.push_back(data);
         for (unsigned int k=0; k<DMS_PAGES_PER_SEGMENT; k++)
         {
-            pageHeader = (dmsPageHeader *) data + k * DMS_PAGESIZE;
+            pageHeader = (dmsPageHeader *) (data + k * DMS_PAGESIZE);
             _freeSpaceMap.insert(pair<unsigned int , PAGEID>(pageHeader->_freeSpace, k));
             slotID = (SLOTID)pageHeader->_numSlots;
             //map every record into memory
             for (unsigned int j=0; j<slotID; j++)
             {
-                slotOffset = *(SLOTOFF *)pageHeader + sizeof(dmsPageHeader)
-                    + j*sizeof(SLOTID);
+                slotOffset = *(SLOTOFF *)(pageHeader + sizeof(dmsPageHeader)
+                    + j*sizeof(SLOTID));
                 if (DMS_SLOT_EMPTY == slotOffset) continue;
-                bson = BSONObj(pageHeader + slotOffset + sizeof(dmsRecord));
-                //TODO
+                bson = BSONObj(data + k * DMS_PAGESIZE + slotOffset + sizeof(dmsRecord));
+                Logger::getLogger().info("load bson string: %s", bson.toString().c_str());
             }
         }
     }
+
+    return rc;
 }
 
 int dmsFile::find(dmsRecordID &rid, BSONObj &result)
@@ -205,12 +216,12 @@ int dmsFile::_searchSlot(char *page, dmsRecordID &rid, SLOTOFF &slotOff)
         return EDB_SYS;
     }
     dmsPageHeader *pageHeader = (dmsPageHeader*)page;
-    if (pageHeader._numSlots < rid._slotID)
+    if ( (pageHeader->_numSlots) < (rid._slotID) )
     {
         Logger::getLogger().error("slot is out of range");
         return EDB_SYS;
     }
-    slotOff = *(SLOTOFF *)(page + size(dmsPageHeader) + rid._slotID * sizeof(SLOTOFF));
+    slotOff = *(SLOTOFF *)(page + sizeof(dmsPageHeader) + rid._slotID * sizeof(SLOTOFF));
 
     return EDB_OK;
 }
@@ -218,12 +229,12 @@ int dmsFile::_searchSlot(char *page, dmsRecordID &rid, SLOTOFF &slotOff)
 int dmsFile::remove(dmsRecordID &rid)
 {
     SLOTOFF slot = 0;
-    int rc = EDB_OK
+    int rc = EDB_OK;
     char *page = NULL;
     dmsRecord *recordHeader = NULL;
     dmsPageHeader *pageHeader = NULL;
 
-    boost::scoped_lock lock (this->_mutex);
+    boost::mutex::scoped_lock lock(this->_mutex);
 
     page = pageToOffset(rid._pageID);
     if (!page)
@@ -259,6 +270,7 @@ int dmsFile::insert(BSONObj &record, BSONObj &outRecord, dmsRecordID &rid)
     dmsPageHeader *pageHeader;
     dmsRecord recordHeader;
     SLOTOFF offsetTemp = 0;
+    char *page = NULL;
 
     recordSize = record.objsize();
 
@@ -322,8 +334,8 @@ retry:
         return EDB_SYS;
     }
 
-    recordHeader->_size = recordSize + sizeof(dmsRecord);
-    recordHeader->_flag = DMS_RECORD_FLAG_NORMAL;
+    recordHeader._size = recordSize + sizeof(dmsRecord);
+    recordHeader._flag = DMS_RECORD_FLAG_NORMAL;
     offsetTemp = pageHeader->_freeOffset - recordSize - sizeof(dmsRecord);
     *(SLOTOFF *)(page +sizeof(dmsPageHeader) + pageHeader->_numSlots * sizeof(SLOTOFF)) = offsetTemp;
     //copy record header
@@ -339,9 +351,15 @@ retry:
     pageHeader->_freeSpace -= recordSize;
     pageHeader->_slotOffset += sizeof(SLOTID);
     pageHeader->_freeOffset = offsetTemp;
+
+    _updateFreeSpace(pageHeader, -(recordSize + sizeof(SLOTID) +sizeof(dmsRecord)), pageID);
+
+    _mutex.unlock();
+
+    return rc;
 }
 
-int dmsFile::_findPage(size_t requireSize)
+PAGEID dmsFile::_findPage(size_t requireSize)
 {
     std::multimap<unsigned int , PAGEID>::iterator iter = _freeSpaceMap.upper_bound(requireSize);
     if (iter!=_freeSpaceMap.end())
@@ -388,14 +406,15 @@ int dmsFile::_extendSegment()
     pageHeader._numSlots = 0;
     pageHeader._freeSpace = DMS_PAGESIZE - sizeof(dmsPageHeader);
     pageHeader._freeOffset = DMS_PAGESIZE;
+    pageHeader._slotOffset = sizeof(dmsPageHeader) + pageHeader._numSlots * sizeof(SLOTOFF);
 
     for (int i=0; i<DMS_PAGES_PER_SEGMENT; i+=DMS_PAGESIZE)
     {
-        memcpy(data + i, (char *)pageHeader, sizeof(pageHeader));
+        memcpy(data + i, (char *)(&pageHeader), sizeof(pageHeader));
     }
 
     this->_mutex.lock();
-    freeMapSize = _freeSpaceMap->size();
+    freeMapSize = _freeSpaceMap.size();
     for (int i=0; i<DMS_PAGES_PER_SEGMENT; i++)
     {
         _freeSpaceMap.insert(pair<unsigned int , PAGEID>(pageHeader._freeSpace, i+freeMapSize));
@@ -407,9 +426,9 @@ int dmsFile::_extendSegment()
     return rc;
 }
 
-int dmsFile::_updateFreeSpace(dmsPageHeader *pageHeader, int changeSize, PAGEID pageID)
+void dmsFile::_updateFreeSpace(dmsPageHeader *pageHeader, int changeSize, PAGEID pageID)
 {
-    unsigned int freeSpace = header->_freeSpace ;
+    unsigned int freeSpace = pageHeader->_freeSpace ;
     std::pair<std::multimap<unsigned int, PAGEID>::iterator,
              std::multimap<unsigned int, PAGEID>::iterator> ret ;
     ret = _freeSpaceMap.equal_range(freeSpace);
@@ -424,10 +443,10 @@ int dmsFile::_updateFreeSpace(dmsPageHeader *pageHeader, int changeSize, PAGEID 
     freeSpace += changeSize;
     pageHeader->_freeSpace = freeSpace;
     //insert new freespace
-    _freeSpaceMap->insert(std::pair<unsigned int , PAGEID>(freeSpace, pageID));
+    _freeSpaceMap.insert(std::pair<unsigned int , PAGEID>(freeSpace, pageID));
 }
 
-int dmsFile::_recoverSpace(char *page)
+void dmsFile::_recoverSpace(char *page)
 {
     dmsPageHeader *pageHeader = NULL;
     SLOTOFF slot = 0;
