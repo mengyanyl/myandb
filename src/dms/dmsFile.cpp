@@ -155,7 +155,7 @@ int dmsFile::_loadData()
             //map every record into memory
             for (unsigned int j=0; j<slotID; j++)
             {
-                slotOffset = *(SLOTOFF *)(pageHeader + sizeof(dmsPageHeader)
+                slotOffset = *(SLOTOFF *)(data + k * DMS_PAGESIZE + sizeof(dmsPageHeader)
                     + j*sizeof(SLOTID));
                 if (DMS_SLOT_EMPTY == slotOffset) continue;
                 bson = BSONObj(data + k * DMS_PAGESIZE + slotOffset + sizeof(dmsRecord));
@@ -337,7 +337,7 @@ retry:
     recordHeader._size = recordSize + sizeof(dmsRecord);
     recordHeader._flag = DMS_RECORD_FLAG_NORMAL;
     offsetTemp = pageHeader->_freeOffset - recordSize - sizeof(dmsRecord);
-    *(SLOTOFF *)(page +sizeof(dmsPageHeader) + pageHeader->_numSlots * sizeof(SLOTOFF)) = offsetTemp;
+    *(SLOTOFF *)(page + sizeof(dmsPageHeader) + pageHeader->_numSlots * sizeof(SLOTOFF)) = offsetTemp;
     //copy record header
     memcpy(page + offsetTemp, ( char*)&recordHeader, sizeof(dmsRecord));
     //copy record body
@@ -348,7 +348,6 @@ retry:
     rid._slotID = pageHeader->_numSlots;
     //change pageheader info
     pageHeader->_numSlots++;
-    pageHeader->_freeSpace -= recordSize;
     pageHeader->_slotOffset += sizeof(SLOTID);
     pageHeader->_freeOffset = offsetTemp;
 

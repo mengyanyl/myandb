@@ -145,7 +145,12 @@ int pmdAgent::recvBodyAndSend(osSocket &sock, MsgHeader &header)
         free(pdata);
 
         //send reply
-        BSONObj retobj = bson::fromjson("{id:1,name:'testquery',sex:'male',age:'35'}");
+        dmsRecordID recordID;
+        recordID._pageID = 0;
+        recordID._slotID = 1;
+        int re = _dmsFilePtr->find(recordID, retobj);
+        if (re)
+            Logger::getLogger().error("find record error, error code: %d", re);
         int replyBodyLen = sizeof(int) * 2 + retobj.objsize();
         sendHeader(_socket, header.sequence, replyBodyLen, OP_REPLY);
         msgBuildReply(&pResultBuffer, 0, retobj);
